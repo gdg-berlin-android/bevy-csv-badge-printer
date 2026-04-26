@@ -30,7 +30,7 @@ def create_badge(attendee, name_only=True):
             )
         )
 
-    filename = f"{attendee.first_name}_{attendee.last_name}.png".lower()
+    filename = f"badges/{attendee.first_name}_{attendee.last_name}.png".lower()
 
     width, height = 600, 400
     
