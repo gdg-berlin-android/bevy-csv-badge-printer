@@ -82,7 +82,7 @@ class Scanner:
         return list(filter(lambda x: needle.lower() in x.line.lower(), self.db))
 
 if __name__ == "__main__":
-    print("Welcome to XXX")
+    print("Welcome to Bevy CSV Thing™")
 
     s = Scanner("db.csv")
 
