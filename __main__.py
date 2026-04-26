@@ -54,10 +54,20 @@ def create_badge(attendee, name_only=True):
     return filename
 
 def show_badge(file):
-    subprocess.call(["chafa", file])
+    try:
+        subprocess.call(["chafa", file])
+    except:
+        print(f"Badge created in '{file}'.")
+
 
 def print_badge(file):
-    subprocess.call(["termux-share", "-d", file])
+    try:
+        subprocess.call(["termux-share", "-d", file])
+    except:
+        try:
+            subprocess.call(["open", file])
+        except:
+            print(f"Please print this file: '{file}'.")
 
 class Scanner:
     def __init__(self, csv_file):
