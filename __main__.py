@@ -6,11 +6,18 @@ class Attendee:
     line:str
     first_name: str
     last_name: str
+    ticket: str
 
 def attendee_found(a):
     file = create_badge(a)
     show_badge(file)
     print_badge(file)
+
+    if a.ticket:
+        with open("checked_in.txt", "a") as report:
+            report.write(a.ticket)
+            report.write("\n")
+
 
 def create_badge(attendee, name_only=True):
     from PIL import Image, ImageDraw, ImageFont
@@ -62,7 +69,12 @@ class Scanner:
             reader = csv.DictReader(f)
             return [
                 # Order number,Ticket number,First Name,Last Name,Email,Twitter,Company,Title,Featured,Ticket title,Ticket venue,Access code,Discount,Price,Currency,Number of tickets,Paid by (name),Paid by (email),Paid date (UTC),Checkin Date (UTC),Ticket Price Paid
-                Attendee(str(x), x["First Name"], x["Last Name"]) 
+                Attendee(
+                    str(x),
+                    x["First Name"],
+                    x["Last Name"],
+                    x["Ticket number"]
+                )
                 for x in reader
         ]
     
@@ -103,7 +115,7 @@ if __name__ == "__main__":
         elif search and search.lower() == "exit":
             go_on = False
         elif search and search.lower() == "new":
-            a = Attendee("",input("first name? "),input("last name? "))
+            a = Attendee("",input("first name? "),input("last name? "),'')
             attendee_found(a)
         else:
             print("No one found.")
