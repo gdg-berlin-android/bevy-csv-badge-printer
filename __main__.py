@@ -53,11 +53,19 @@ def create_badge(attendee, name_only=True):
 
     return filename
 
+def find_csv(target):
+    try:
+        subprocess.call(["termux-storage-get", target])
+        print("Please try again.")
+    except:
+        print(f"Database csv not found: '{target}'.")
+
 def show_badge(file):
     try:
         subprocess.call(["chafa", file])
     except:
         print(f"Badge created in '{file}'.")
+
 
 
 def print_badge(file):
@@ -106,7 +114,12 @@ class Scanner:
 if __name__ == "__main__":
     print("Welcome to Bevy CSV Thing™")
 
-    s = Scanner("db.csv")
+    try:
+        s = Scanner("db.csv")
+    except FileNotFoundError:
+        import sys
+        find_csv("db.csv")
+        sys.exit(0)
 
     go_on = True
     while go_on:
