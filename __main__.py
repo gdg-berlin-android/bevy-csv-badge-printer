@@ -106,7 +106,7 @@ class Scanner:
 
     def get_from_qr(self, identifier):
         event_id, attendee_id = identifier.split(':')
-        self.match_from_db(attendee_id)
+        return self.match_from_db(attendee_id)
 
     def match_from_db(self, needle):
         return list(filter(lambda x: needle.lower() in x.line.lower(), self.db))
