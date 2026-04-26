@@ -123,7 +123,7 @@ if __name__ == "__main__":
 
     go_on = True
     while go_on:
-        search = input("\nscan attendee rsvp qr code or\nenter their name or\nor 'new' for manual attendee addition\nor 'exit' to quit out of this\n\n> ")
+        search = input("\nscan attendee rsvp qr code or\nenter their name or\nor '/new' for manual attendee addition\nor '/exit' to quit out of this\n\n> ")
         if not search or len(search) == 0:
             continue
 
@@ -135,9 +135,9 @@ if __name__ == "__main__":
                 attendee_found(a[0])
             else:
                 print("\nMore than one attendee found, try again.")
-        elif search and search.lower() == "exit":
+        elif search and search == "/exit":
             go_on = False
-        elif search and search.lower() == "new":
+        elif search and search == "/new":
             a = Attendee("",input("first name? "),input("last name? "),'')
             attendee_found(a)
         else:
