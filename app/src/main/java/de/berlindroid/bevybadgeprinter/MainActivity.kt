@@ -102,7 +102,7 @@ class MainActivity : ComponentActivity() {
                     topBar = {
                         TopAppBar(
                             title = {
-                                Text(stringResource(R.string.app_name))
+                                Text(vm.state.toAppBarTitle())
                             },
                             navigationIcon = {
                                 MainNavigationIcon(vm)
@@ -810,3 +810,15 @@ private fun Reason.toMessageId(): Int = when (this) {
     Reason.UpdateAttendee -> R.string.loading_reason_checking_attendees
     Reason.CommunicateWithBackend -> R.string.loading_reason_checking_backend
 }
+
+@Composable
+private fun BevyViewModel.State.toAppBarTitle(): String =
+    "${stringResource(R.string.app_name)}${
+        when (this) {
+            is State.Authenticated.SelectEvent -> " - ${chapter.name}"
+
+            is State.Authenticated.CheckAttendeesIn -> " - ${chapter.name} - ${event.name}"
+
+            else -> " - ${javaClass.simpleName}"
+        }
+    }"

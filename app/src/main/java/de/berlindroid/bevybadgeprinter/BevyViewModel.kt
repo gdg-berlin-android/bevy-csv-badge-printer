@@ -342,7 +342,7 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
 
                 _state = State.Authenticated.SelectEvent(
                     token,
-                    Chapter(chapter.id, chapter.description),
+                    chapter.toView(),
                     events.map { it.toView() }
                 )
 
@@ -606,7 +606,7 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
 val Attendee.isArtificial: Boolean
     get() = this.id <= 0
 
-private fun Bevy.Service.Chapter.toView(): Chapter = Chapter(id, description)
+private fun Bevy.Service.Chapter.toView(): Chapter = Chapter(id, title)
 
 private fun Bevy.Service.Event.toView(): Event = Event(id, title, bannerUrl)
 
