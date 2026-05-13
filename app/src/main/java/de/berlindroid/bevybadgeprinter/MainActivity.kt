@@ -717,6 +717,16 @@ fun ShowAdditionalAttendeesView(
 }
 
 @Composable
+@Preview
+private fun ConfirmBadgePrintViewPreview() {
+    ConfirmBadgePrintView(
+        attendee = Attendee(-1, "Mario Bodemann", true),
+        { _, _ -> },
+        {},
+    )
+}
+
+@Composable
 fun ConfirmBadgePrintView(
     attendee: BevyViewModel.Attendee,
     onConfirmed: (attendee: Attendee, badge: Bitmap) -> Unit,
@@ -770,7 +780,11 @@ fun ConfirmBadgePrintView(
                     )
                 }
 
-                Text(text = attendee.name)
+                Text(
+                    text = "${attendee.name} @${attendee.id}",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = FontFamily.Monospace
+                )
             }
         }
     )
