@@ -81,6 +81,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import de.berlindroid.bevybadgeprinter.BevyViewModel.Attendee
 import de.berlindroid.bevybadgeprinter.BevyViewModel.State
+import de.berlindroid.bevybadgeprinter.BevyViewModel.State.Loading.Reason
 import de.berlindroid.bevybadgeprinter.ui.theme.BevyBadgePrinterTheme
 import kotlinx.coroutines.launch
 
@@ -140,10 +141,12 @@ fun BoxScope.MainSelectorView(
     when (val state = vm.state) {
         is State.Initializing -> {
             vm.updateStateFromPreferences()
-            LoadingView()
+            LoadingView(
+                Reason.CommunicateWithBackend
+            )
         }
 
-        is State.Loading -> LoadingView()
+        is State.Loading -> LoadingView(state.reason)
 
         is State.Error -> ErrorView(state.throwable, vm::copyToClipboard, vm::dismissError)
 
@@ -309,7 +312,14 @@ fun EnterValueView(
 
 @Preview
 @Composable
-fun LoadingView() {
+private fun LoadingViewPreview() {
+    LoadingView(Reason.CheckApiToken)
+}
+
+@Composable
+fun LoadingView(
+    reason: Reason
+) {
     val infiniteTransition = rememberInfiniteTransition(label = "loading")
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f,
@@ -331,6 +341,9 @@ fun LoadingView() {
             modifier = Modifier
                 .scale(5f)
                 .rotate(rotation)
+        )
+        Text(
+            text = stringResource(reason.toMessageId())
         )
     }
 }
@@ -788,4 +801,12 @@ fun ConfirmBadgePrintView(
             }
         }
     )
+}
+
+private fun Reason.toMessageId(): Int = when (this) {
+    Reason.CheckApiToken -> R.string.loading_reason_checking_token
+    Reason.CheckEvent -> R.string.loading_reason_checking_event
+    Reason.CheckChapter -> R.string.loading_reason_checking_chapter
+    Reason.UpdateAttendee -> R.string.loading_reason_checking_attendees
+    Reason.CommunicateWithBackend -> R.string.loading_reason_checking_backend
 }

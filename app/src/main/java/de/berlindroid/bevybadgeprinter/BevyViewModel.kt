@@ -23,6 +23,7 @@ import androidx.lifecycle.viewModelScope
 import de.berlindroid.bevybadgeprinter.BevyViewModel.Attendee
 import de.berlindroid.bevybadgeprinter.BevyViewModel.Chapter
 import de.berlindroid.bevybadgeprinter.BevyViewModel.Event
+import de.berlindroid.bevybadgeprinter.BevyViewModel.State.Loading.Reason
 import de.berlindroid.bevybadgeprinter.bevy.Bevy
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
@@ -56,7 +57,17 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
     sealed class State {
         object Initializing : State()
 
-        object Loading : State()
+        data class Loading(
+            val reason: Reason
+        ) : State() {
+            enum class Reason {
+                CheckApiToken,
+                CheckChapter,
+                CheckEvent,
+                UpdateAttendee,
+                CommunicateWithBackend,
+            }
+        }
 
         data class Error(
             val throwable: Throwable,
@@ -119,7 +130,7 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
     val state: State get() = _state
 
     fun updateStateFromPreferences() {
-        _state = State.Loading
+        _state = State.Loading(Reason.CommunicateWithBackend)
 
         viewModelScope.launch {
             _state = if (has(API_TOKEN)) {
@@ -269,7 +280,7 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun apiTokenEntered(token: String) {
-        _state = State.Loading
+        _state = State.Loading(Reason.CheckApiToken)
 
         viewModelScope.launch {
             _state = try {
@@ -315,7 +326,7 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val token = (_state as State.Authenticated).token
             try {
-                _state = State.Loading
+                _state = State.Loading(Reason.CheckChapter)
 
                 val chapter = bevy.getChapter(
                     token,
@@ -355,7 +366,7 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val eventState = _state as State.Authenticated.SelectEvent
-                _state = State.Loading
+                _state = State.Loading(Reason.CheckEvent)
 
                 val attendees = bevy.listAttendees(
                     eventState.token,
@@ -385,6 +396,7 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
         attendee: Attendee
     ) {
         (_state as? State.Authenticated.CheckAttendeesIn)?.let { selectAttendeeState ->
+            _state = State.Loading(Reason.UpdateAttendee)
             if (attendee.checkedIn) {
                 if (attendee.isArtificial) {
                     _state = selectAttendeeState.copy(

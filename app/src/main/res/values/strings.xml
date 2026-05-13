@@ -12,4 +12,9 @@
     <string name="attendee_button_new">Add Attendee</string>
     <string name="confirm_badge_print_button_title">Print</string>
     <string name="confirm_badge_title">Print this Badge?</string>
+    <string name="loading_reason_checking_token">Checking API token</string>
+    <string name="loading_reason_checking_backend">Communicating with backend</string>
+    <string name="loading_reason_checking_attendees">Reading attendee states</string>
+    <string name="loading_reason_checking_chapter">Was the chapter found?</string>
+    <string name="loading_reason_checking_event">Checking event status</string>
 </resources>
