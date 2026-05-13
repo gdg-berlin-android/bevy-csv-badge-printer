@@ -3,3 +3,7 @@ __pycache__/
 badges/*.png
 *.txt
 
+.gradle
+.idea
+build/
+local.properties

@@ -1,15 +1,14 @@
 # Badgprinter
 
-provide bevy flavored csv of event, start this on android's termux with connected badge printer.
+## Python
 
-Success.
+Easy early termux script implementation: [./python](.python).
 
-``` sh
-python .
-```
+## Android App
 
+Something something good app.
 
-# Use
+# Tokens
 
-Use the command_list.png for scaning those qrcodes with a barcode scanner to not need to type too much. Keyboard incomming.
+Find a way to get bevy tokens.
 
