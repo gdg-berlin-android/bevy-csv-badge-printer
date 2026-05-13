@@ -15,13 +15,15 @@ class LoggingInterceptor : Interceptor {
         request.body?.writeTo(requestBuffer)
         val requestBody = requestBuffer.readUtf8()
 
-        Log.i("HTTP_LOG", "--> Sending request ${request.method} ${request.url}\nHeaders: ${request.headers}\nBody: $requestBody")
+        Log.i("HTTP_LOG", "--> Sending request ${request.method} ${request.url}")
+        Log.i("HTTP_LOG", "--> Headers: ${request.headers}")
+        Log.i("HTTP_LOG", "--> Body: $requestBody")
 
         val response = chain.proceed(request)
 
         val responseBody = response.peekBody(Long.MAX_VALUE).string()
         Log.i("HTTP_LOG", "<-- Received response ${response.code} from ${response.request.url}")
-        Log.i("HTTP_LOG", "<-- Received headers: ${response.headers})")
+        Log.i("HTTP_LOG", "<-- Received headers: ${response.headers}")
         if (response.headers["content-type"] == "text/html") {
             Log.i("HTTP_LOG", "<-- Received Body: <<html>>")
         } else {

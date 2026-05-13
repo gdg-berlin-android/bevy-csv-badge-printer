@@ -4,9 +4,12 @@
     <string name="enter_token_label">Your api token here.</string>
     <string name="enter_chapter_id_title">Enter Chapter Identifier</string>
     <string name="enter_chapter_id_label">Chapter Id (981 for berlindroid)</string>
-    <string name="attendee_search_label">part of attendee name or it or scan result</string>
+    <string name="attendee_search_label">Enter or scan</string>
     <string name="create_attendee_title">Create New Attendee Details</string>
     <string name="create_attendee_label">Attendee name</string>
     <string name="create_attendee_description">Please enter the name (first + last) for the attendee you didn\'t find and want to add. No bevy account needed.</string>
     <string name="additionals_title">Non Registered Users</string>
+    <string name="attendee_button_new">Add Attendee</string>
+    <string name="confirm_badge_print_button_title">Print</string>
+    <string name="confirm_badge_title">Print this Badge?</string>
 </resources>

@@ -4,10 +4,13 @@ import android.app.Application
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.FileProvider
 import androidx.core.content.getSystemService
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -24,6 +27,8 @@ import de.berlindroid.bevybadgeprinter.bevy.Bevy
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
 
 private val API_TOKEN = stringPreferencesKey("api_token")
 private val CHAPTER_ID = intPreferencesKey("chapter_id")
@@ -56,7 +61,11 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
         data class Error(
             val throwable: Throwable,
             val previousState: State,
-        ) : State()
+        ) : State() {
+            init {
+                Log.e("UIERROR", "UI SAID NO", throwable)
+            }
+        }
 
         object EnterApiToken : State()
 
@@ -78,16 +87,27 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
                 val chapter: Chapter,
                 val events: List<Event>,
                 val event: Event,
-                val attendees: List<Attendee>
+                val attendees: List<Attendee>,
+                val attendeesByHand: List<Attendee>,
+            ) : Authenticated(token)
+
+            data class ConfirmAttendeePrint(
+                override val token: String,
+                val chapter: Chapter,
+                val events: List<Event>,
+                val event: Event,
+                val attendees: List<Attendee>,
+                val attendeesByHand: List<Attendee>,
+                val attendee: Attendee
             ) : Authenticated(token)
         }
 
         data class CreateNewAttendee(
-            val previousState: Authenticated.CheckAttendeesIn
+            val checkInState: Authenticated.CheckAttendeesIn
         ) : State()
 
         data class ShowAdditionalAttendees(
-            val attendees: List<String>,
+            val attendees: List<Attendee>,
             val previousState: State
         ) : State()
     }
@@ -122,7 +142,8 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
                             attendees = bevy.listAttendees(
                                 token = token,
                                 event = eventId,
-                            ).results.map { it.toView() }
+                            ).results.map { it.toView() },
+                            attendeesByHand = get(ADDITIONAL_ATTENDEES).toAttendeeList()
                         )
                     } else {
                         val listEvents = bevy.listEvents(token, chapterId)
@@ -151,7 +172,7 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _state = when (val state = _state) {
                 is State.CreateNewAttendee ->
-                    state.previousState
+                    state.checkInState
 
                 is State.Authenticated.CheckAttendeesIn ->
                     State.Authenticated.SelectEvent(
@@ -187,6 +208,15 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
                 is State.Initializing -> State.Initializing
 
                 is State.ShowAdditionalAttendees -> state.previousState
+
+                is State.Authenticated.ConfirmAttendeePrint -> State.Authenticated.CheckAttendeesIn(
+                    token = state.token,
+                    chapter = state.chapter,
+                    events = state.events,
+                    event = state.event,
+                    attendees = state.attendees,
+                    attendeesByHand = state.attendeesByHand,
+                )
             }
         }
     }
@@ -202,7 +232,7 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
 
     fun showAdditionals() {
         viewModelScope.launch {
-            val additionals = get(ADDITIONAL_ATTENDEES)?.split(",") ?: listOf()
+            val additionals = get(ADDITIONAL_ATTENDEES).toAttendeeList()
             _state = State.ShowAdditionalAttendees(
                 additionals,
                 _state
@@ -213,6 +243,12 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
     fun deleteAdditionals() {
         viewModelScope.launch {
             unset(ADDITIONAL_ATTENDEES)
+
+            _state = when (val typedState = state) {
+                is State.Authenticated.CheckAttendeesIn -> typedState.copy(attendeesByHand = emptyList())
+                is State.Authenticated.ConfirmAttendeePrint -> typedState.copy(attendeesByHand = emptyList())
+                else -> typedState
+            }
         }
     }
 
@@ -333,7 +369,8 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
                     eventState.chapter,
                     eventState.events,
                     event,
-                    attendees
+                    attendees,
+                    get(ADDITIONAL_ATTENDEES).toAttendeeList()
                 )
             } catch (th: Throwable) {
                 _state = State.Error(
@@ -347,33 +384,153 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
     fun attendeeSelected(
         attendee: Attendee
     ) {
-        // TODO PRINT
-
-        // TODO CHECKIN
         (_state as? State.Authenticated.CheckAttendeesIn)?.let { selectAttendeeState ->
-            viewModelScope.launch {
-                val updatedAttendees = bevy.checkInAttendee(
-                    selectAttendeeState.token,
-                    selectAttendeeState.event.id,
-                    attendee.id,
-                    !attendee.checkedIn
-                )
-
-                _state = selectAttendeeState.copy(
-                    attendees = selectAttendeeState.attendees.map { oldAttendee ->
-                        val newAttendeeWithId = updatedAttendees.attendees.firstOrNull { newAttendee ->
-                            newAttendee.id == oldAttendee.id
+            if (attendee.checkedIn) {
+                if (attendee.isArtificial) {
+                    _state = selectAttendeeState.copy(
+                        attendeesByHand = selectAttendeeState.attendeesByHand.map {
+                            if (it.name == attendee.name) {
+                                it.copy(checkedIn = false)
+                            } else {
+                                it
+                            }
                         }
-
-                        if (newAttendeeWithId != null && newAttendeeWithId.isCheckedIn != oldAttendee.checkedIn) {
-                            oldAttendee.copy(checkedIn = newAttendeeWithId.isCheckedIn)
-                        } else {
-                            oldAttendee
-                        }
+                    )
+                } else {
+                    viewModelScope.launch {
+                        updateAttendeeOnline(
+                            selectAttendeeState.token,
+                            selectAttendeeState.chapter,
+                            selectAttendeeState.events,
+                            selectAttendeeState.event,
+                            selectAttendeeState.attendees,
+                            selectAttendeeState.attendeesByHand,
+                            attendee.copy(checkedIn = false),
+                        )
                     }
+                }
+            } else {
+                _state = State.Authenticated.ConfirmAttendeePrint(
+                    selectAttendeeState.token,
+                    selectAttendeeState.chapter,
+                    selectAttendeeState.events,
+                    selectAttendeeState.event,
+                    selectAttendeeState.attendees,
+                    selectAttendeeState.attendeesByHand,
+                    attendee.copy(checkedIn = true)
                 )
             }
+        } ?: run {
+            _state = State.Error(
+                IllegalStateException("Attendee selected while not in attendee selection state."),
+                _state
+            )
         }
+    }
+
+    fun printConfirmed(attendee: Attendee, context: Context, badge: Bitmap) {
+        (_state as? State.Authenticated.ConfirmAttendeePrint)?.let { printConfirmedState ->
+            viewModelScope.launch {
+                // TODO: actual print!
+                val local = badge.copy(Bitmap.Config.ARGB_8888, true)
+                Log.i("BMP", "${local.width}x")
+                local.shareToPrinter(context, attendee.name + attendee.id)
+
+                if (attendee.isArtificial) {
+                    updateHandishAttendees(
+                        token = printConfirmedState.token,
+                        chapter = printConfirmedState.chapter,
+                        events = printConfirmedState.events,
+                        event = printConfirmedState.event,
+                        attendees = printConfirmedState.attendees,
+                        attendeesByHand = printConfirmedState.attendeesByHand,
+                        attendee = attendee,
+                    )
+                } else {
+                    updateAttendeeOnline(
+                        token = printConfirmedState.token,
+                        chapter = printConfirmedState.chapter,
+                        events = printConfirmedState.events,
+                        event = printConfirmedState.event,
+                        attendees = printConfirmedState.attendees,
+                        attendeesByHand = printConfirmedState.attendeesByHand,
+                        attendee = attendee,
+                    )
+                }
+            }
+        } ?: run {
+            _state = State.Error(
+                IllegalStateException("Cannot print in this state: $_state."),
+                _state
+            )
+        }
+    }
+
+    private suspend fun updateHandishAttendees(
+        token: String,
+        chapter: Chapter,
+        events: List<Event>,
+        event: Event,
+        attendees: List<Attendee>,
+        attendeesByHand: List<Attendee>,
+        attendee: Attendee,
+    ) {
+        val updatedHandishAttendees = attendeesByHand.map {
+            if (it.name == attendee.name) {
+                it.copy(checkedIn = !it.checkedIn)
+            } else {
+                it
+            }
+        }
+
+        set(ADDITIONAL_ATTENDEES, updatedHandishAttendees.toBlob())
+
+        _state = State.Authenticated.CheckAttendeesIn(
+            token = token,
+            chapter = chapter,
+            events = events,
+            event = event,
+            attendees = attendees,
+            attendeesByHand = updatedHandishAttendees,
+        )
+    }
+
+    private suspend fun updateAttendeeOnline(
+        token: String,
+        chapter: Chapter,
+        events: List<Event>,
+        event: Event,
+        attendees: List<Attendee>,
+        attendeesByHand: List<Attendee>,
+        attendee: Attendee,
+    ) {
+        val updatedAttendees = bevy.checkInAttendee(
+            token,
+            event.id,
+            attendee.id,
+            attendee.checkedIn
+        )
+
+        _state = State.Authenticated.CheckAttendeesIn(
+            token = token,
+            chapter = chapter,
+            events = events,
+            event = event,
+            attendees = attendees.map { oldAttendee ->
+                val updatedAttendee = updatedAttendees.attendees.firstOrNull { updatedAttendee ->
+                    updatedAttendee.id == oldAttendee.id
+                }
+
+                if (updatedAttendee != null) {
+                    oldAttendee.copy(
+                        checkedIn = updatedAttendee.isCheckedIn
+                    )
+                } else {
+                    oldAttendee
+                }
+            },
+            attendeesByHand = attendeesByHand,
+        )
     }
 
     fun createNewAttendee() {
@@ -388,13 +545,20 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch {
             _state = (state as? State.CreateNewAttendee)?.let { createState ->
-                Log.i("YOOL", "New attendee created: $name.")
+                val additionals = get(ADDITIONAL_ATTENDEES).toAttendeeList().toMutableList()
+                additionals.add(Attendee(-1, name, false))
+                set(ADDITIONAL_ATTENDEES, additionals.toBlob())
 
-                set(ADDITIONAL_ATTENDEES, "${get(ADDITIONAL_ATTENDEES)}$name,")
+                State.Authenticated.ConfirmAttendeePrint(
+                    createState.checkInState.token,
+                    createState.checkInState.chapter,
+                    createState.checkInState.events,
+                    createState.checkInState.event,
+                    createState.checkInState.attendees,
+                    additionals,
+                    Attendee(-1, name, false)
+                )
 
-                /// TODO PRINT
-
-                createState.previousState
             } ?: State.Error(
                 IllegalStateException("State cannot create a new attendee."),
                 _state
@@ -427,6 +591,9 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
     }
 }
 
+val Attendee.isArtificial: Boolean
+    get() = this.id <= 0
+
 private fun Bevy.Service.Chapter.toView(): Chapter = Chapter(id, description)
 
 private fun Bevy.Service.Event.toView(): Event = Event(id, title, bannerUrl)
@@ -435,5 +602,47 @@ private fun Bevy.Service.DetailedEvent.toView(): Event = Event(id, title, banner
 
 private fun Bevy.Service.Attendee.toView(): Attendee = Attendee(id, "$firstName $lastName", isCheckedIn)
 
+private fun String?.toAttendeeList(): List<Attendee> =
+    orEmpty()
+        .split(",")
+        .mapNotNull { blob ->
+            if (":" in blob) {
+                val (name, checked) = blob.split(":")
+                Attendee(-1, name, checked == "true")
+            } else {
+                null
+            }
+        }
 
-private fun Int?.nullIfZero(): Int? = if (this == 0) null else this
+private fun List<Attendee>.toBlob(): String = joinToString(separator = ",") { attendee ->
+    "${attendee.name}:${attendee.checkedIn}"
+}
+
+private fun Bitmap.shareToPrinter(
+    context: Context,
+    name: String,
+) {
+    val cachePath = File(context.cacheDir, "images")
+    cachePath.mkdirs()
+
+    val stream = FileOutputStream("$cachePath/$name.png")
+    compress(Bitmap.CompressFormat.PNG, 100, stream)
+    stream.close()
+
+    val imageFile = File(cachePath, "$name.png")
+    val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", imageFile)
+
+    if (contentUri != null) {
+        val shareIntent = Intent().apply {
+            action = Intent.ACTION_VIEW
+            addCategory(Intent.CATEGORY_DEFAULT)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+
+            setDataAndType(contentUri, "image/png")
+        }
+
+        context.startActivity(
+            shareIntent,
+        )
+    }
+}

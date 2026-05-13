@@ -3,6 +3,7 @@ package de.berlindroid.bevybadgeprinter.bevy
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
@@ -155,6 +156,36 @@ class Bevy {
             val attendees: List<ShortAttendee>
         )
 
+        @Serializable
+        data class AuthenticationProvider(
+            @SerialName("provider") val provider: String,
+            @SerialName("provider_user_id") val providerUserId: Int,
+        )
+
+        @Serializable
+        data class Role(
+            @SerialName("id") val id: Int,
+            @SerialName("name") val name: String,
+            @SerialName("description") val description: String,
+            @SerialName("user_active_status") val userActiveStatus: Boolean,
+        )
+
+        @Serializable
+        data class DetailedUser(
+            @SerialName("authentication_providers") val authenticationProviders: List<AuthenticationProvider>,
+            @SerialName("avatar") val avatar: Image,
+            @SerialName("company") val company: String,
+            @SerialName("cropped_avatar_url") val croppedAvatarUrl: String,
+            @SerialName("extra_data") val extraData: JsonObject,
+            @SerialName("title") val title: String,
+            @SerialName("role") val role: Role,
+            @SerialName("email") val email: String,
+            @SerialName("first_name") val firstName: String,
+            @SerialName("id") val id: Int,
+            @SerialName("last_name") val lastName: String,
+            @SerialName("username") val username: String,
+        )
+
         @GET("api/chapter/{chapter_id}/")
         suspend fun getChapter(
             @Header("authorization") authorization: String,
@@ -187,6 +218,12 @@ class Bevy {
             @Header("authorization") authorization: String,
             @Path("event_id") event: Int,
         ): DetailedEvent
+
+        @GET("api/user/{user_id}/")
+        suspend fun getUser(
+            @Header("authorization") authorization: String,
+            @Path("user_id") user: Int,
+        ): DetailedUser
     }
 
     private val json = Json {
@@ -264,6 +301,14 @@ class Bevy {
     ): Service.DetailedEvent = service.getEvent(
         token.toAuthorization(),
         eventId,
+    )
+
+    suspend fun getUser(
+        token: String,
+        userId: Int
+    ): Service.DetailedUser = service.getUser(
+        token.toAuthorization(),
+        userId,
     )
 }
 

@@ -1,5 +1,6 @@
 package de.berlindroid.bevybadgeprinter
 
+import android.graphics.Bitmap
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
@@ -53,25 +54,34 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import de.berlindroid.bevybadgeprinter.BevyViewModel.Attendee
 import de.berlindroid.bevybadgeprinter.BevyViewModel.State
 import de.berlindroid.bevybadgeprinter.ui.theme.BevyBadgePrinterTheme
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val vm: BevyViewModel by viewModels()
@@ -96,9 +106,6 @@ class MainActivity : ComponentActivity() {
                                 MainNavigationIcon(vm)
                             },
                             actions = {
-                                IconButton(onClick = { vm.logout() }) {
-                                    Icon(imageVector = Icons.Default.Refresh, contentDescription = null)
-                                }
                                 IconButton(onClick = { vm.deleteAdditionals() }) {
                                     Icon(imageVector = Icons.Default.Delete, contentDescription = null)
                                 }
@@ -127,6 +134,8 @@ class MainActivity : ComponentActivity() {
 fun BoxScope.MainSelectorView(
     vm: BevyViewModel
 ) {
+    val context = LocalContext.current
+
     when (val state = vm.state) {
         is State.Initializing -> {
             vm.updateStateFromPreferences()
@@ -156,6 +165,7 @@ fun BoxScope.MainSelectorView(
 
         is State.Authenticated.CheckAttendeesIn -> CheckAttendeesInView(
             attendees = state.attendees,
+            attendeesByHand = state.attendeesByHand,
             createNewAttendee = vm::createNewAttendee,
             attendeeSelected = vm::attendeeSelected,
         )
@@ -170,6 +180,18 @@ fun BoxScope.MainSelectorView(
             onDone = {
                 vm.goBack()
             },
+        )
+
+        is State.Authenticated.ConfirmAttendeePrint -> ConfirmBadgePrintView(
+            state.attendee,
+            onConfirmed = { attendee, badge ->
+                vm.printConfirmed(
+                    attendee,
+                    context,
+                    badge
+                )
+            },
+            onDismiss = vm::goBack,
         )
     }
 }
@@ -400,20 +422,26 @@ fun EventView(
 private fun CheckAttendeesInViewPreview() {
     CheckAttendeesInView(
         listOf(
-            BevyViewModel.Attendee(0, "PETE", false),
-            BevyViewModel.Attendee(0, "Checked", true),
-        ), {}
+            BevyViewModel.Attendee(12, "Pegg Nose Pete", false),
+            BevyViewModel.Attendee(654, "Checked", true),
+        ),
+        listOf(
+            BevyViewModel.Attendee(-1, "New Peete", false),
+            BevyViewModel.Attendee(-1, "New Peete", true),
+        ),
+        {}
     ) {}
 }
 
 @Composable
 fun CheckAttendeesInView(
-    attendees: List<BevyViewModel.Attendee>,
+    attendees: List<Attendee>,
+    attendeesByHand: List<BevyViewModel.Attendee>,
     attendeeSelected: (BevyViewModel.Attendee) -> Unit,
     createNewAttendee: () -> Unit
 ) {
     val focusRequester = remember { FocusRequester() }
-    var filteredAttendees by remember { mutableStateOf(attendees) }
+    var filteredAttendees by remember { mutableStateOf(attendees + attendeesByHand) }
     var tempName by remember { mutableStateOf("") }
 
     var firstTime by remember { mutableStateOf(true) }
@@ -435,7 +463,7 @@ fun CheckAttendeesInView(
                 enabled = true,
                 onRefresh = {
                     tempName = ""
-                    filteredAttendees = attendees
+                    filteredAttendees = attendees + attendeesByHand
                 }
             )
     ) {
@@ -443,63 +471,68 @@ fun CheckAttendeesInView(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Spacer(modifier = Modifier.weight(1f))
             TextField(
                 modifier = Modifier
+                    .weight(1f)
                     .padding(8.dp)
                     .focusRequester(focusRequester),
                 value = tempName,
                 label = { Text(stringResource(R.string.attendee_search_label)) },
                 trailingIcon = {
-                    IconButton(
-                        onClick = {
-                            tempName = ""
-                            filteredAttendees = attendees
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = null
-                        )
+                    Row {
+                        IconButton(
+                            onClick = {
+                                tempName = ""
+                                filteredAttendees = attendees + attendeesByHand
+                            }
+                        ) { Icon(imageVector = Icons.Default.Delete, contentDescription = null) }
+                        IconButton(
+                            onClick = {
+                                filteredAttendees = (attendees + attendeesByHand).filter { it.checkedIn }
+                            }
+                        ) { Icon(imageVector = Icons.Default.Check, contentDescription = null) }
+                        IconButton(
+                            onClick = {
+                                filteredAttendees = (attendees + attendeesByHand).filter { it.isArtificial }
+                            }
+                        ) { Text("😅") }
                     }
                 },
                 onValueChange = { new ->
                     tempName = new
-                    if (new.length > 2) {
-                        filteredAttendees = attendees.filter { attendee ->
+                    filteredAttendees = if (new.length > 2) {
+                        (attendees + attendeesByHand).filter { attendee ->
                             attendee.name.contains(tempName, ignoreCase = true)
                         }
                     } else {
-                        filteredAttendees = attendees
+                        attendees + attendeesByHand
                     }
                 },
             )
-            Button(onClick = {}) {
-                Text("Search")
+            Button(
+                onClick = createNewAttendee
+            ) {
+                Text(text = stringResource(R.string.attendee_button_new))
             }
-            Spacer(modifier = Modifier.weight(1f))
         }
+        Text(
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.End,
+            text = "Found ${filteredAttendees.size} attendee${if (filteredAttendees.size == 1) "" else "s"}",
+            style = MaterialTheme.typography.bodySmall,
+            fontFamily = FontFamily.Monospace,
+        )
         LazyVerticalGrid(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
-            columns = GridCells.Adaptive(150.dp)
+            columns = GridCells.Adaptive(300.dp)
         ) {
             items(filteredAttendees) { attendee ->
                 AttendeeView(
                     attendee,
-                    if (attendee.checkedIn) {
-                        Color.Green.copy(alpha = 0.5f)
-                    } else {
-                        Color.Blue.copy(alpha = 0.25f)
-                    }
                 ) {
                     attendeeSelected(attendee)
-                }
-            }
-            item {
-                NewAttendeeView {
-                    createNewAttendee()
                 }
             }
         }
@@ -510,17 +543,28 @@ fun CheckAttendeesInView(
 @Composable
 private fun AttendeeViewPreview() {
     AttendeeView(
-        BevyViewModel.Attendee(124, "Pete", false),
-        Color.Red.copy(0.5f)
+        BevyViewModel.Attendee(124, "Pete Poke", false),
+    ) {}
+}
+
+@Preview
+@Composable
+private fun AttendeeViewCheckedPreview() {
+    AttendeeView(
+        BevyViewModel.Attendee(124, "Pete Poke", true),
     ) {}
 }
 
 @Composable
 fun AttendeeView(
     attendee: BevyViewModel.Attendee,
-    containerColor: Color,
     onClick: () -> Unit,
 ) {
+    val containerColor = when {
+        attendee.isArtificial -> Color(0xFFA08000)
+        else -> Color.DarkGray
+    }
+
     val cardColor = CardDefaults.cardColors(
         containerColor = containerColor
     )
@@ -528,7 +572,7 @@ fun AttendeeView(
     Card(
         modifier = Modifier
             .padding(4.dp)
-            .size(150.dp)
+            .size(300.dp, 150.dp)
             .clickable(
                 onClick = onClick
             ),
@@ -538,27 +582,27 @@ fun AttendeeView(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp),
-            contentAlignment = Alignment.BottomCenter
+            contentAlignment = Alignment.Center
         ) {
-            AsyncImage(
-                modifier = Modifier.fillMaxSize(),
-                model = "https://http.cat/200",
-                contentDescription = null
-            )
-            Box {
+            if (attendee.checkedIn) {
                 Text(
-                    modifier = Modifier.blur(10.dp, BlurredEdgeTreatment.Unbounded),
-                    text = attendee.name,
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    modifier = Modifier.blur(0.1.dp, BlurredEdgeTreatment.Unbounded),
-                    text = attendee.name,
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodyLarge
+                    modifier = Modifier.fillMaxSize(),
+                    text = "☑",
+                    fontSize = 32.sp,
+                    textAlign = TextAlign.End,
+                    color = Color.Green,
                 )
             }
+
+            Text(
+                text = attendee.name,
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontSize = 32.sp,
+                    color = Color.White,
+                    lineHeight = .85.em,
+                )
+            )
         }
     }
 }
@@ -576,9 +620,9 @@ fun NewAttendeeView(
     AttendeeView(
         BevyViewModel.Attendee(
             0,
-            "+ NEW +",
+            stringResource(R.string.attendee_button_new),
             false,
-        ), Color.Yellow, onClick
+        ), onClick
     )
 }
 
@@ -632,13 +676,16 @@ fun EnterNewAttendeeDetailView(
 @Composable
 private fun ShowAdditionalAttendeesViewPreview() {
     ShowAdditionalAttendeesView(
-        listOf("Foo Bar"), {}
+        listOf(
+            Attendee(-1, "Foo Bar", false),
+            Attendee(-1, "Foo Bar", true)
+        ), {}
     ) {}
 }
 
 @Composable
 fun ShowAdditionalAttendeesView(
-    attendees: List<String>,
+    attendees: List<Attendee>,
     copyToClipboard: (String) -> Unit,
     onDone: () -> Unit,
 ) {
@@ -657,10 +704,69 @@ fun ShowAdditionalAttendeesView(
         text = {
             LazyColumn {
                 items(attendees) { attendee ->
-                    Text(text = attendee)
+                    Text(text = "${if (attendee.checkedIn) "☑" else "☐"}: ${attendee.name}")
                 }
             }
         }
     )
+}
 
+@Composable
+fun ConfirmBadgePrintView(
+    attendee: BevyViewModel.Attendee,
+    onConfirmed: (attendee: Attendee, badge: Bitmap) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val coroutineScope = rememberCoroutineScope()
+    val graphicsLayer = rememberGraphicsLayer()
+
+    var bitmap: Bitmap? by remember { mutableStateOf(null) }
+
+    AlertDialog(
+        title = { Text(text = stringResource(R.string.confirm_badge_title)) },
+        onDismissRequest = onDismiss,
+        dismissButton = {
+            Button(onClick = onDismiss) {
+                Text(stringResource(android.R.string.cancel))
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onConfirmed(
+                        attendee,
+                        bitmap ?: throw IllegalStateException("Button should not be enabled.")
+                    )
+                },
+                enabled = bitmap != null
+            ) {
+                Text(stringResource(R.string.confirm_badge_print_button_title))
+            }
+        },
+        text = {
+            Column {
+                Box(
+                    modifier = Modifier
+                        .size(300.dp, 200.dp)
+                        .drawWithContent {
+                            graphicsLayer.record {
+                                this@drawWithContent.drawContent()
+                            }
+                            drawContent()
+
+                            coroutineScope.launch {
+                                bitmap = graphicsLayer.toImageBitmap().asAndroidBitmap()
+                            }
+                        }
+                ) {
+                    Badge(
+                        modifier = Modifier.size(300.dp, 200.dp),
+                        name = attendee.name,
+                    )
+                }
+
+                Text(text = attendee.name)
+            }
+        }
+    )
 }
