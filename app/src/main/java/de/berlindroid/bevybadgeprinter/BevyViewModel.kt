@@ -443,9 +443,7 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
     fun printConfirmed(attendee: Attendee, context: Context, badge: Bitmap) {
         (_state as? State.Authenticated.ConfirmAttendeePrint)?.let { printConfirmedState ->
             viewModelScope.launch {
-                // TODO: actual print!
                 val local = badge.copy(Bitmap.Config.ARGB_8888, true)
-                Log.i("BMP", "${local.width}x")
                 local.shareToPrinter(context, attendee.name + attendee.id)
 
                 if (attendee.isArtificial) {

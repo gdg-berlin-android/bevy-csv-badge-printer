@@ -514,12 +514,25 @@ fun CheckAttendeesInView(
                 },
                 onValueChange = { new ->
                     tempName = new
-                    filteredAttendees = if (new.length > 2) {
-                        (attendees + attendeesByHand).filter { attendee ->
-                            attendee.name.contains(tempName, ignoreCase = true)
+                    if ((":" in tempName) and ("\n" in tempName)) {
+                        val (eventId, attendeeId) = tempName.trim().split(":")
+                        (attendees).firstOrNull {
+                            it.id == (attendeeId.toIntOrNull() ?: 0)
+                        }?.let { attendeeById ->
+                            attendeeSelected(
+                                attendeeById
+                            )
                         }
+
+                        tempName = ""
                     } else {
-                        attendees + attendeesByHand
+                        filteredAttendees = if (new.length > 2) {
+                            (attendees + attendeesByHand).filter { attendee ->
+                                attendee.name.contains(tempName, ignoreCase = true)
+                            }
+                        } else {
+                            attendees + attendeesByHand
+                        }
                     }
                 },
             )
