@@ -17,4 +17,6 @@
     <string name="loading_reason_checking_attendees">Reading attendee states</string>
     <string name="loading_reason_checking_chapter">Was the chapter found?</string>
     <string name="loading_reason_checking_event">Checking event status</string>
+    <string name="show_token_qr_code_title">API Token QR Code</string>
+    <string name="show_token_qr_code_description">Scan this code with your handscanner on the other device to transmit api access token.</string>
 </resources>

@@ -25,6 +25,9 @@ import de.berlindroid.bevybadgeprinter.BevyViewModel.Chapter
 import de.berlindroid.bevybadgeprinter.BevyViewModel.Event
 import de.berlindroid.bevybadgeprinter.BevyViewModel.State.Loading.Reason
 import de.berlindroid.bevybadgeprinter.bevy.Bevy
+import io.nayuki.fastqrcodegen.QrCode
+import io.nayuki.fastqrcodegen.QrCode.Ecc
+import io.nayuki.fastqrcodegen.toBitmap
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
@@ -79,6 +82,16 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         object EnterApiToken : State()
+
+        data class ScanAttendeeQrCode(
+            val checkInState: Authenticated.CheckAttendeesIn
+        ) : State()
+
+        data class ShowApiTokenQrCode(
+            val token: String,
+            val qrCode: Bitmap,
+            val previousState: State
+        ) : State()
 
         sealed class Authenticated(
             open val token: String,
@@ -228,37 +241,10 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
                     attendees = state.attendees,
                     attendeesByHand = state.attendeesByHand,
                 )
-            }
-        }
-    }
 
-    fun logout() {
-        viewModelScope.launch {
-            unset(ADDITIONAL_ATTENDEES)
-            unset(EVENT_ID)
-            unset(CHAPTER_ID)
-            unset(API_TOKEN)
-        }
-    }
+                is State.ScanAttendeeQrCode -> state.checkInState
 
-    fun showAdditionals() {
-        viewModelScope.launch {
-            val additionals = get(ADDITIONAL_ATTENDEES).toAttendeeList()
-            _state = State.ShowAdditionalAttendees(
-                additionals,
-                _state
-            )
-        }
-    }
-
-    fun deleteAdditionals() {
-        viewModelScope.launch {
-            unset(ADDITIONAL_ATTENDEES)
-
-            _state = when (val typedState = state) {
-                is State.Authenticated.CheckAttendeesIn -> typedState.copy(attendeesByHand = emptyList())
-                is State.Authenticated.ConfirmAttendeePrint -> typedState.copy(attendeesByHand = emptyList())
-                else -> typedState
+                is State.ShowApiTokenQrCode -> state.previousState
             }
         }
     }
@@ -473,6 +459,45 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
                 IllegalStateException("Cannot print in this state: $_state."),
                 _state
             )
+        }
+    }
+
+    fun showApiTokenQrCode() {
+        _state = (_state as? State.Authenticated)?.let {
+            val qr = QrCode.encodeText(
+                it.token,
+                Ecc.LOW
+            ).toBitmap()
+
+            State.ShowApiTokenQrCode(
+                it.token,
+                qr,
+                it
+            )
+        } ?: State.Error(IllegalStateException("Not authenticated, cannot show authentication token."), _state)
+    }
+
+    fun scanAttendeeQrCode() {
+        _state = (_state as? State.Authenticated.CheckAttendeesIn)?.let {
+            State.ScanAttendeeQrCode(it)
+        } ?: State.Error(IllegalStateException("Cannot scan qr code without being able to select attendees"), _state)
+    }
+
+    fun attendeeScanned(scanned: String) {
+        (_state as? State.ScanAttendeeQrCode)?.let { scanState ->
+            val checkAttendeesState = scanState.checkInState
+            _state = checkAttendeesState
+
+            val (eventId, attendeeId) = scanned.trim().split(":")
+            (checkAttendeesState.attendees).firstOrNull {
+                it.id == (attendeeId.toIntOrNull() ?: 0)
+            }?.let { attendeeById ->
+                attendeeSelected(attendeeById)
+            } ?: run {
+                _state = scanState
+            }
+        } ?: run {
+            _state = State.Error(IllegalStateException("Cannot deal with results while not scanning."), _state)
         }
     }
 

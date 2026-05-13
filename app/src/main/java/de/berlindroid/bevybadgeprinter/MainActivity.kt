@@ -1,7 +1,9 @@
 package de.berlindroid.bevybadgeprinter
 
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
 import androidx.activity.compose.setContent
@@ -20,10 +22,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -34,7 +38,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -68,7 +71,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -79,6 +84,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import de.berlindroid.bevybadgeprinter.BevyViewModel.Attendee
 import de.berlindroid.bevybadgeprinter.BevyViewModel.State
 import de.berlindroid.bevybadgeprinter.BevyViewModel.State.Loading.Reason
@@ -108,11 +116,20 @@ class MainActivity : ComponentActivity() {
                                 MainNavigationIcon(vm)
                             },
                             actions = {
-                                IconButton(onClick = { vm.deleteAdditionals() }) {
-                                    Icon(imageVector = Icons.Default.Delete, contentDescription = null)
-                                }
-                                IconButton(onClick = { vm.showAdditionals() }) {
-                                    Icon(imageVector = Icons.Default.Person, contentDescription = null)
+                                if (vm.state is State.Authenticated) {
+                                    Button(
+                                        onClick = { vm.showApiTokenQrCode() },
+                                    ) {
+                                        Text("Token")
+                                    }
+                                    if (vm.state is State.Authenticated.CheckAttendeesIn) {
+                                        Spacer(Modifier.width(8.dp))
+                                        Button(
+                                            onClick = { vm.scanAttendeeQrCode() },
+                                        ) {
+                                            Text("Scan")
+                                        }
+                                    }
                                 }
                             }
                         )
@@ -171,6 +188,7 @@ fun BoxScope.MainSelectorView(
             attendees = state.attendees,
             attendeesByHand = state.attendeesByHand,
             createNewAttendee = vm::createNewAttendee,
+            attendeeScanned = vm::attendeeScanned,
             attendeeSelected = vm::attendeeSelected,
         )
 
@@ -196,6 +214,18 @@ fun BoxScope.MainSelectorView(
                 )
             },
             onDismiss = vm::goBack,
+        )
+
+        is State.ShowApiTokenQrCode -> ApiTokenQrCodeView(
+            token = state.token,
+            qrCode = state.qrCode,
+            onCopyToken = { vm.copyToClipboard(state.token) },
+            onDone = vm::goBack,
+        )
+
+        is State.ScanAttendeeQrCode -> ScanQrCodesView(
+            onSuccess = vm::attendeeScanned,
+            onFailure = vm::goBack,
         )
     }
 }
@@ -443,19 +473,24 @@ private fun CheckAttendeesInViewPreview() {
             BevyViewModel.Attendee(-1, "New Peete", false),
             BevyViewModel.Attendee(-1, "New Peete", true),
         ),
-        {}
-    ) {}
+        {},
+        {},
+        {},
+    )
 }
 
 @Composable
 fun CheckAttendeesInView(
     attendees: List<Attendee>,
-    attendeesByHand: List<BevyViewModel.Attendee>,
-    attendeeSelected: (BevyViewModel.Attendee) -> Unit,
+    attendeesByHand: List<Attendee>,
+    attendeeSelected: (Attendee) -> Unit,
+    attendeeScanned: (String) -> Unit,
     createNewAttendee: () -> Unit
 ) {
     val focusRequester = remember { FocusRequester() }
-    var filteredAttendees by remember { mutableStateOf(attendees + attendeesByHand) }
+    var filteredAttendees by remember(attendees, attendeesByHand) {
+        mutableStateOf(attendees + attendeesByHand)
+    }
     var tempName by remember { mutableStateOf("") }
 
     var firstTime by remember { mutableStateOf(true) }
@@ -515,16 +550,7 @@ fun CheckAttendeesInView(
                 onValueChange = { new ->
                     tempName = new
                     if ((":" in tempName) and ("\n" in tempName)) {
-                        val (eventId, attendeeId) = tempName.trim().split(":")
-                        (attendees).firstOrNull {
-                            it.id == (attendeeId.toIntOrNull() ?: 0)
-                        }?.let { attendeeById ->
-                            attendeeSelected(
-                                attendeeById
-                            )
-                        }
-
-                        tempName = ""
+                        attendeeScanned(tempName)
                     } else {
                         filteredAttendees = if (new.length > 2) {
                             (attendees + attendeesByHand).filter { attendee ->
@@ -816,6 +842,83 @@ fun ConfirmBadgePrintView(
     )
 }
 
+@Composable
+fun ApiTokenQrCodeView(
+    token: String,
+    qrCode: Bitmap,
+    onCopyToken: () -> Unit,
+    onDone: () -> Unit,
+) {
+    AlertDialog(
+        title = { Text(text = stringResource(R.string.show_token_qr_code_title)) },
+        onDismissRequest = onDone,
+        confirmButton = {
+            Button(onClick = onDone) { Text(stringResource(android.R.string.ok)) }
+        },
+        dismissButton = {
+            Button(onClick = onCopyToken) { Text(stringResource(android.R.string.copy)) }
+        },
+        text = {
+            LazyColumn {
+                item { Text(stringResource(R.string.show_token_qr_code_description)) }
+                item {
+                    Image(
+                        modifier = Modifier.padding(16.dp),
+                        bitmap = qrCode.asImageBitmap(),
+                        contentDescription = null
+                    )
+                }
+                item {
+                    Text(
+                        text = token,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+        }
+    )
+}
+
+@Composable
+fun ScanQrCodesView(
+    onSuccess: (String) -> Unit,
+    onFailure: () -> Unit,
+) {
+    val context = LocalContext.current
+
+    val options =
+        GmsBarcodeScannerOptions
+            .Builder()
+            .setBarcodeFormats(
+                Barcode.FORMAT_QR_CODE,
+            ).enableAutoZoom()
+            .build()
+
+    val scanner = GmsBarcodeScanning.getClient(context, options)
+
+    scanner
+        .startScan()
+        .addOnSuccessListener { barcode ->
+            barcode.rawValue?.let { scanned ->
+                if (":" in scanned) {
+                    onSuccess(scanned)
+                } else {
+                    onFailure()
+                }
+            } ?: run {
+                Log.e("QR", "Null barcode")
+                onFailure()
+            }
+        }.addOnCanceledListener {
+            Log.e("QR", "Scanning canceled.")
+            onFailure()
+        }.addOnFailureListener {
+            Log.e("QR", "Error: ${it.message}")
+            onFailure()
+        }
+}
+
 private fun Reason.toMessageId(): Int = when (this) {
     Reason.CheckApiToken -> R.string.loading_reason_checking_token
     Reason.CheckEvent -> R.string.loading_reason_checking_event
@@ -825,13 +928,20 @@ private fun Reason.toMessageId(): Int = when (this) {
 }
 
 @Composable
-private fun BevyViewModel.State.toAppBarTitle(): String =
-    "${stringResource(R.string.app_name)}${
-        when (this) {
-            is State.Authenticated.SelectEvent -> " - ${chapter.name}"
+private fun BevyViewModel.State.toAppBarTitle(): String {
+    val configuration = LocalConfiguration.current
 
-            is State.Authenticated.CheckAttendeesIn -> " - ${chapter.name} - ${event.name}"
+    return if (configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+        "${stringResource(R.string.app_name)}${
+            when (this) {
+                is State.Authenticated.SelectEvent -> " - ${chapter.name}"
 
-            else -> " - ${javaClass.simpleName}"
-        }
-    }"
+                is State.Authenticated.CheckAttendeesIn -> " - ${chapter.name} - ${event.name}"
+
+                else -> " - ${javaClass.simpleName}"
+            }
+        }"
+    } else {
+        stringResource(R.string.app_name)
+    }
+}

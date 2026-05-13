@@ -54,6 +54,7 @@ dependencies {
     implementation(libs.androidx.datastore)
     implementation(libs.coil)
     implementation(libs.coil.network)
+    implementation(libs.google.barcode)
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
