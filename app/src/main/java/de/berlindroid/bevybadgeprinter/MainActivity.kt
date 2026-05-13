@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
@@ -509,19 +510,23 @@ fun CheckAttendeesInView(
                     }
                 },
             )
-            Button(
-                onClick = createNewAttendee
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(text = stringResource(R.string.attendee_button_new))
+                Button(
+                    onClick = createNewAttendee
+                ) {
+                    Text(text = stringResource(R.string.attendee_button_new))
+                }
+                Text(
+                    textAlign = TextAlign.End,
+                    text = "Found ${filteredAttendees.size} attendee${if (filteredAttendees.size == 1) "" else "s"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    autoSize = TextAutoSize.StepBased(minFontSize = 4.sp, maxFontSize = 10.sp)
+                )
             }
         }
-        Text(
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = TextAlign.End,
-            text = "Found ${filteredAttendees.size} attendee${if (filteredAttendees.size == 1) "" else "s"}",
-            style = MaterialTheme.typography.bodySmall,
-            fontFamily = FontFamily.Monospace,
-        )
         LazyVerticalGrid(
             modifier = Modifier
                 .fillMaxWidth()
