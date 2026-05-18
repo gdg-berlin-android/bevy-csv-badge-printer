@@ -2,6 +2,7 @@ package de.berlindroid.bevybadgeprinter
 
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.Paint
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -64,11 +65,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -355,7 +360,7 @@ fun LoadingView(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing),
+            animation = tween(2000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "rotation"
@@ -369,10 +374,20 @@ fun LoadingView(
             imageVector = Icons.Default.Refresh,
             contentDescription = "Loading",
             modifier = Modifier
-                .scale(5f)
+                .size(150.dp)
                 .rotate(rotation)
         )
+
         Text(
+            modifier = Modifier.drawBehind {
+                val border = 15f
+                drawRect(
+                    blendMode = BlendMode.Clear,
+                    color = Color.White,
+                    topLeft = Offset(-border, -border),
+                    size = Size(size.width+2*border, size.height+2*border)
+                )
+            },
             text = stringResource(reason.toMessageId())
         )
     }
