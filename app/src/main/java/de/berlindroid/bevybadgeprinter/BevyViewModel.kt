@@ -484,8 +484,13 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun attendeeScanned(scanned: String) {
-        (_state as? State.ScanAttendeeQrCode)?.let { scanState ->
-            val checkAttendeesState = scanState.checkInState
+        val maybeCheckInState = when (val state = _state) {
+            is State.ScanAttendeeQrCode -> state.checkInState
+            is State.Authenticated.CheckAttendeesIn -> state
+            else -> null
+        }
+
+        maybeCheckInState?.let { checkAttendeesState ->
             _state = checkAttendeesState
 
             val (eventId, attendeeId) = scanned.trim().split(":")
@@ -494,7 +499,7 @@ class BevyViewModel(application: Application) : AndroidViewModel(application) {
             }?.let { attendeeById ->
                 attendeeSelected(attendeeById)
             } ?: run {
-                _state = scanState
+                _state = maybeCheckInState
             }
         } ?: run {
             _state = State.Error(IllegalStateException("Cannot deal with results while not scanning."), _state)
